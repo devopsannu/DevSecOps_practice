@@ -63,39 +63,33 @@ stages:
     displayName: sonarqube_scaner_quality
     jobs:
       - job: sonarqube_job
-    
         displayName: Sonarqube_job
         steps:
-        - task: SonarQubePrepare@8
-          displayName: sonar_scan
-          inputs:
-            SonarQube: 'Sonarqube_connection'
-            scannerMode: 'cli'
-            configMode: 'manual'
-            cliProjectKey: 'Sonarqube_SAST_testing'
-            cliProjectName: 'Sonarqube_SAST_testing'
-            cliSources: '$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith/src'
-            extraProperties: |
-                sonar.sourceEncoding=UTF-8
-                sonar.exclusions=**/node_modules/**,**/build/**,**/dist/**
-                sonar.tests=$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith/src
-                sonar.test.inclusions=**/*.test.js,**/*.spec.js
-                sonar.javascript.lcov.reportPaths=coverage/lcov.info
-                sonar.branch.name=main
+         - powershell: |
+              $url = "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-windows.zip"
+              $zip = "$(Agent.TempDirectory)\sonar-scanner.zip"
+              $dest = "$(Agent.ToolsDirectory)\sonar-scanner"
+
+              Invoke-WebRequest $url -OutFile $zip
+              Expand-Archive $zip -DestinationPath $dest -Force
+
+              $scannerPath = Get-ChildItem $dest | Select-Object -First 1
+              Write-Host "##vso[task.prependpath]$($scannerPath.FullName)\bin"
+           displayName: Install Sonar Scanner CLI
 
 
+         - script: |
+            sonar-scanner ^
+              -Dsonar.projectKey=Sonarqube_SAST_testing ^
+              -Dsonar.projectName="Sonarqube_SAST_testing" ^
+              -Dsonar.sources=src ^
+              -Dsonar.exclusions=**/node_modules/**,**/build/** ^
+              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info ^
+              -Dsonar.sourceEncoding=UTF-8 ^
+              -Dsonar.host.url=http://localhost:9000/ ^
+              -Dsonar.login=squ_e7e4e367c66a121abea9ff38ca156d65b20e118f
+           workingDirectory: $(System.DefaultWorkingDirectory)/ReactTodoUIMonolith
 
-
-
-        - task: SonarQubeAnalyze@8
-          displayName: sonar_analyze
-          inputs:
-            jdkversion: 'JAVA_HOME_21_X64'
-
-        - task: SonarQubePublish@8
-          displayName: sonar_publice_result
-          inputs:
-            pollingTimeoutSec: '300'
 
 
 
