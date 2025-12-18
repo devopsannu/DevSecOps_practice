@@ -1,0 +1,239 @@
+trigger:
+- main
+- feature/*
+
+pool: recap-pool
+
+variables:
+- group: "New variable group 08-Dec"
+
+
+# INFRACOST_API_KEY: $(INFRACOST_API_KEY)
+
+parameters:
+- name: environment
+  type: string
+  default: Dev
+  values:
+  - Dev
+  - Prod
+
+
+stages:
+
+
+# 1) TERRAFORM INIT + FMT + VALIDATE + PLAN
+
+- stage: Terraformbuild_stage
+  displayName: "Terraform Build Steps"
+  jobs:
+    - job: terraform_init_plan
+      condition: false
+      displayName: "Terraform Init/Validate/Plan"
+      steps:
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: "$(workdir)"
+            backendServiceArm: 'recap-connection1'
+            backendAzureRmResourceGroupName: 'backend_rg_dont_delete'
+            backendAzureRmStorageAccountName: 'stgannuback'
+            backendAzureRmContainerName: 'stgannuback'
+            backendAzureRmKey: 'prod.tfstate'
+
+        - task: TerraformTaskV4@4
+          displayName: Terraform FMT
+          inputs:
+            provider: 'azurerm'
+            command: 'custom'
+            customCommand: 'fmt'
+            outputTo: 'console'
+            environmentServiceNameAzureRM: 'recap-connection1'
+
+        - task: TerraformTaskV4@4
+          displayName: Terraform Validate
+          inputs:
+            provider: 'azurerm'
+            command: 'validate'
+
+        - task: TerraformTaskV4@4
+          displayName: Terraform Plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            workingDirectory: '$(workdir)'
+            commandOptions: '-out=tfplan'
+            environmentServiceNameAzureRM: 'recap-connection1'
+
+
+# 2) BASIC SECURITY SCAN
+
+- stage: BasicSecurity
+  displayName: "Basic Terraform Security Scan"
+  dependsOn: Terraformbuild_stage
+  jobs:
+    - job: basic_scan
+      displayName: "TFLint & tfsec"
+      steps:
+        - task: AzureCLI@2
+          displayName: "Run TFLint"
+          condition: false
+          continueOnError: true
+          inputs:
+            azureSubscription: 'recap-connection1'
+            scriptType: 'ps'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              echo "Running TFLint..."
+              tflint --chdir $(workdir)
+
+        - task: tfsec@1
+          displayName: "Run tfsec"
+          inputs:
+            version: 'v1.26.0'
+            dir: "$(workdir)"
+
+        - task: PowerShell@2
+          displayName: "Run Checkov"
+          condition: false
+          continueOnError: true
+          inputs:
+            targetType: 'inline'
+            script: |
+              checkov -d .
+            workingDirectory: "$(workdir)"
+            powerShellErrorActionPreference: 'continue'
+
+       
+        # FIXED Infracost section (was previously broken)
+     
+- stage: cost_analyze
+  dependsOn: BasicSecurity
+  displayName: Infracost_scan
+  jobs:
+    - job: infra_job
+      displayName: Infra_job
+      steps:
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: "$(workdir)"
+            backendServiceArm: 'recap-connection1'
+            backendAzureRmResourceGroupName: 'backend_rg_dont_delete'
+            backendAzureRmStorageAccountName: 'stgannuback'
+            backendAzureRmContainerName: 'stgannuback'
+            backendAzureRmKey: 'prod.tfstate'
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            workingDirectory: '$(workdir)'
+            commandOptions: '-out=tfplan'
+            environmentServiceNameAzureRM: 'recap-connection1'
+
+            
+        - powershell: |
+              $env:INFRACOST_API_KEY = "$(INFRACOST_API_KEY)"
+              infracost breakdown --path "tfplan" --format table --out-file infracost.txt
+          displayName: "Generate Cost Report"
+          workingDirectory: '$(workdir)'
+
+        - powershell: |
+              $source = "$(workdir)/infracost.txt"
+              $destination = "$(Build.ArtifactStagingDirectory)/infracost.txt"
+              New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)"
+              Copy-Item $source $destination -Force
+          displayName: "Move Infracost Report to Artifact Staging Directory"
+
+        - task: PublishBuildArtifacts@1
+          displayName: "Publish Cost Report"
+          inputs:
+            PathtoPublish: '$(Build.ArtifactStagingDirectory)/infracost.txt'
+            ArtifactName: 'CostReport'
+            publishLocation: 'Container'
+
+- stage: Sonarqube_scan
+  dependsOn: cost_analyze
+  displayName: sonarqube_scaner_quality
+  jobs:
+    - job: sonarqube_job
+  
+      displayName: Sonarqube_job
+      steps:
+      - task: SonarQubePrepare@8
+        displayName: sonar_scan
+        inputs:
+          SonarQube: 'Sonarqube-connecction'
+          scannerMode: 'cli'
+          configMode: 'manual'
+          cliProjectKey: 'pipeline-testing'
+          cliProjectName: 'pipeline-testing'
+          cliSources: '$(workdir)'
+
+      - task: SonarQubeAnalyze@8
+        displayName: sonar_analyze
+        inputs:
+          jdkversion: 'JAVA_HOME_21_X64'
+
+      - task: SonarQubePublish@8
+        displayName: sonar_publice_result
+        inputs:
+          pollingTimeoutSec: '300'
+
+
+
+
+
+
+# 3) MANUAL APPROVAL
+
+- stage: ManualApproval
+  displayName: "Manual Approval Stage"
+  dependsOn: Sonarqube_scan
+  jobs:
+    - job: approval_job
+      displayName: "Manual Approval"
+      pool: server
+      steps:
+        - task: ManualValidation@1
+          inputs:
+            notifyUsers: 'devopsannu@gmail.com'
+            approvers: 'devopsannu@gmail.com'
+            instructions: 'Please check and approve'
+
+
+# 4) TERRAFORM APPLY
+
+- stage: terraformApply
+  dependsOn: ManualApproval
+  displayName: "terraform Apply"
+  jobs:
+    - job: TerraformApplyjob
+      displayName: "Terraform Apply Job"
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+      steps:
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: "$(workdir)"
+            backendServiceArm: 'recap-connection1'
+            backendAzureRmResourceGroupName: 'backend_rg_dont_delete'
+            backendAzureRmStorageAccountName: 'stgannuback'
+            backendAzureRmContainerName: 'stgannuback'
+            backendAzureRmKey: 'prod.tfstate'
+
+        - task: TerraformTaskV4@4
+          displayName: "Terraform Apply"
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            workingDirectory: "$(workdir)"
+            environmentServiceNameAzureRM: 'recap-connection1'
