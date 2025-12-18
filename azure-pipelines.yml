@@ -1,0 +1,101 @@
+name: forntend_SAST_monolithic
+
+trigger:
+  - main
+
+pool: recap-pool
+
+stages:
+  - stage: Install_Dependencies
+    jobs:
+      - job: Install_node_tool
+        steps:
+        - task: NodeTool@0
+          displayName: Install_node_tool
+          inputs:
+            versionSource: 'spec'
+            versionSpec: '18.x'
+
+        - task: Npm@1
+          displayName: Install_npm_tool
+          condition: false
+          
+          inputs:
+            command: 'install'
+            workingDir: '$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith'
+        - task: PowerShell@2
+          displayName: Lint JavaScript (Biome)+ # Run Biome checks+Init Biome config
+          continueOnError: true
+          condition: false
+          inputs:
+            targetType: 'inline'
+            script:  |
+              npm install --save-dev @biomejs/biome
+              npx biome init 
+              npx biome check .
+            workingDir: '$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith'
+
+        - task: Npm@1
+          displayName: NPM Audit
+          continueOnError: true
+          condition: false
+          inputs:
+            command: 'custom'
+            workingDir: '$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith'
+            customCommand: 'audit'
+
+        - task: trivy@2
+          displayName: Trivy_scan
+          continueOnError: true
+          condition: false
+          inputs:
+            method: 'system'
+            type: 'filesystem'
+            target: '$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith'
+            scanners: 'license, misconfig, secret, vuln'
+            severities: 'LOW, MEDIUM, HIGH, CRITICAL'
+            failOnSeverityThreshold: 'HIGH'
+            reports: 'html'
+            publish: true
+
+  - stage: Sonarqube_scan
+    dependsOn: Install_Dependencies
+    displayName: sonarqube_scaner_quality
+    jobs:
+      - job: sonarqube_job
+    
+        displayName: Sonarqube_job
+        steps:
+        - task: SonarQubePrepare@8
+          displayName: sonar_scan
+          inputs:
+            SonarQube: 'Sonarqube_connection'
+            scannerMode: 'cli'
+            configMode: 'manual'
+            cliProjectKey: 'Sonarqube_SAST_testing'
+            cliProjectName: 'Sonarqube_SAST_testing'
+            cliSources: '$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith/src'
+            extraProperties: |
+                sonar.sourceEncoding=UTF-8
+                sonar.exclusions=**/node_modules/**,**/build/**,**/dist/**
+                sonar.tests=$(System.DefaultWorkingDirectory)/ReactTodoUIMonolith/src
+                sonar.test.inclusions=**/*.test.js,**/*.spec.js
+                sonar.javascript.lcov.reportPaths=coverage/lcov.info
+                sonar.branch.name=main
+
+
+
+
+
+        - task: SonarQubeAnalyze@8
+          displayName: sonar_analyze
+          inputs:
+            jdkversion: 'JAVA_HOME_21_X64'
+
+        - task: SonarQubePublish@8
+          displayName: sonar_publice_result
+          inputs:
+            pollingTimeoutSec: '300'
+
+
+
