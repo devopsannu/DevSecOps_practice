@@ -78,16 +78,28 @@ stages:
            displayName: Install Sonar Scanner CLI
 
 
+        #  - script: |
+        #     sonar-scanner ^
+        #       -Dsonar.projectKey=Sonarqube_SAST_testing ^
+        #       -Dsonar.projectName="Sonarqube_SAST_testing" ^
+        #       -Dsonar.sources=src ^
+        #       -Dsonar.exclusions=**/node_modules/**,**/build/** ^
+        #       -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info ^
+        #       -Dsonar.sourceEncoding=UTF-8 ^
+        #       -Dsonar.host.url=http://localhost:9000/ ^
+        #       -Dsonar.login=squ_e7e4e367c66a121abea9ff38ca156d65b20e118f
+        #    workingDirectory: $(System.DefaultWorkingDirectory)/ReactTodoUIMonolith
+
          - script: |
             sonar-scanner ^
-              -Dsonar.projectKey=Sonarqube_SAST_testing ^
-              -Dsonar.projectName="Sonarqube_SAST_testing" ^
+              -Dsonar.projectKey=Anupam_kumar_B17_G23 ^
+              -Dsonar.projectName="Anupam_kumar_B17_G23" ^
               -Dsonar.sources=src ^
               -Dsonar.exclusions=**/node_modules/**,**/build/** ^
               -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info ^
               -Dsonar.sourceEncoding=UTF-8 ^
-              -Dsonar.host.url=http://localhost:9000/ ^
-              -Dsonar.login=squ_e7e4e367c66a121abea9ff38ca156d65b20e118f
+              -Dsonar.host.url=https://sonarqube.devopsinsiders.com/ ^
+              -Dsonar.login=sqa_b226df9715ad4f9ed666af30843de4643720e2ec
            workingDirectory: $(System.DefaultWorkingDirectory)/ReactTodoUIMonolith
 
 
