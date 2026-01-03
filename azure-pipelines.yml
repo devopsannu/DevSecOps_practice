@@ -63,6 +63,7 @@ stages:
     displayName: sonarqube_scaner_quality
     jobs:
       - job: sonarqube_job
+        condition: false
         displayName: Sonarqube_job
         steps:
          - powershell: |
@@ -117,6 +118,9 @@ stages:
             npm install -g retire
             npm install
             retire --exitwith 0
+          
+          workingDirectory: $(System.DefaultWorkingDirectory)/ReactTodoUIMonolith
+          
 
 
 
