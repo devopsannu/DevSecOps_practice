@@ -103,5 +103,20 @@ stages:
            workingDirectory: $(System.DefaultWorkingDirectory)/ReactTodoUIMonolith
 
 
+  - stage: SoftwareCompositionAnalysis
+    displayName: Software Composition Analysis (Dependency Security)
+    jobs: 
+    - job: DependencyVulnerabilityScan
+      displayName: Dependency Vulnerability Scan (Retire.js)
+      steps: 
+      - task: PowerShell@2
+        displayName: Run Dependency Security Scan
+        inputs:
+          targetType: 'inline'
+          script: |
+            npm install -g retire
+            npm install
+            retire --exitwith 0
+
 
 
